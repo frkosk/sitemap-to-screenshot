@@ -34,12 +34,12 @@ A Node.js script that takes screenshots of URLs listed in a sitemap, either from
 - **input**: Required. The URL of the sitemap or the path to a local sitemap file.
 - **--viewport**: Optional. Set the resolution for the screenshots (default: `1280x800`).
 - **--output**: Optional. The directory where screenshots will be saved (default: `screenshots`).
-- **--cookies**: Optional. The ID of the button to click for cookie consent.
+- **--cookieSelector**: Optional. The css selector of the button to click for cookie consent.
 
 ## Example
 
 ```bash
-node sitemap-screenshot-generator.js https://example.com/sitemap.xml --viewport=1920x1080 --output=./my_screenshots --cookies=cookie-consent-button
+node sitemap-screenshot-generator.js https://example.com/sitemap.xml --viewport=1920x1080 --output=./my_screenshots --cookieSelector=cookie-consent-button
 ```
 
 This will take screenshots of all pages in the provided sitemap with the specified resolution and save them to the `./my-screenshots` folder.
