@@ -1,81 +1,111 @@
 #!/usr/bin/env node
 
-const puppeteer = require('puppeteer') // Import puppeteer library
-const axios = require('axios') // Import axios for fetching URLs
-const xml2js = require('xml2js') // Import xml2js for parsing XML data
-const fs = require('fs') // Import filesystem module for file operations
-const path = require('path') // Import path module for working with file paths
+const puppeteer = require('puppeteer')
+const fs = require('fs')
+const path = require('path')
+const axios = require('axios')
+const xml2js = require('xml2js')
+const minimist = require('minimist')
+const isUrl = require('is-url')
 
-// Function to fetch and parse sitemap
-async function fetchSitemap(url) {
+const { performance } = require('perf_hooks')
+
+// Function to process a single URL and take screenshot
+async function takeScreenshot(url, browser, outputDir, viewport) {
+    const page = await browser.newPage()
+    await page.setViewport(viewport)
+
     try {
-        const response = await axios.get(url)
-        const sitemap = await xml2js.parseStringPromise(response.data)
-        const urls = sitemap.urlset.url.map(u => u.loc[0])
-        return urls
+        console.log(`Taking screenshot of ${url}`)
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 })
+        const filename = path.join(outputDir, `${url.replace(/https?:\/\//, '').replace(/\//g, '_')}.png`)
+        await page.screenshot({ path: filename })
+        console.log(`✅ Screenshot saved: ${filename}`)
     } catch (error) {
-        console.error('Error fetching sitemap:', error)
-        throw error
+        console.error(`❌ Error while processing ${url}: ${error.message}`)
+    } finally {
+        await page.close()
     }
 }
 
-// Function to take screenshot for each URL
-async function takeScreenshots(urls, resolution = { width: 1280, height: 800 }, outputDir = './screenshots') {
-    const browser = await puppeteer.launch()
-    const page = await browser.newPage()
+// Function to parse sitemap (either from a URL or a local file)
+async function parseSitemap(input) {
+    let sitemapXml = ''
 
-    // Set the viewport size
-    await page.setViewport(resolution)
+    if (isUrl(input)) {
+        console.log(`🌐 Fetching sitemap from URL: ${input}`)
+        const response = await axios.get(input)
+        sitemapXml = response.data
+    } else {
+        console.log(`📂 Reading sitemap from local file: ${input}`)
+        sitemapXml = fs.readFileSync(input, 'utf8')
+    }
+
+    const parser = new xml2js.Parser()
+    const result = await parser.parseStringPromise(sitemapXml)
+    const urls = result.urlset.url.map(entry => entry.loc[0])
+    return urls
+}
+
+// Function to format time in seconds, minutes, and seconds if over a minute
+function formatDuration(milliseconds) {
+    const seconds = Math.floor((milliseconds / 1000) % 60)
+    const minutes = Math.floor((milliseconds / (1000 * 60)) % 60)
+    const hours = Math.floor((milliseconds / (1000 * 60 * 60)) % 24)
+
+    let timeString = `${seconds} seconds`
+
+    if (minutes > 0) {
+        timeString = `${minutes} minutes ${timeString}`
+    }
+
+    if (hours > 0) {
+        timeString = `${hours} hours ${timeString}`
+    }
+
+    return timeString
+}
+
+// Main function to process the script
+async function main(input, resolution = '1280x800', outputDir = 'screenshots') {
+    const viewport = { width: parseInt(resolution.split('x')[0]), height: parseInt(resolution.split('x')[1]) }
+
+    console.log(`🛠️  Starting the screenshot process...`)
 
     // Create output directory if it doesn't exist
     if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true })
+        console.log(`📁 Creating output directory: ${outputDir}`)
+        fs.mkdirSync(outputDir)
     }
 
-    let screenshotCount = 0
-    const startTime = Date.now()
+    const urls = await parseSitemap(input)
+    console.log(`🔗 Found ${urls.length} URLs in the sitemap.`)
 
-    // Loop through each URL and take a screenshot
-    for (const url of urls) {
-        try {
-            await page.goto(url, { waitUntil: 'networkidle2' })
-            const filename = path.join(outputDir, `${url.replace(/https?:\/\//, '').replace(/\//g, '_')}.png`)
-            await page.screenshot({ path: filename })
-            screenshotCount++
-            console.log(`Screenshot saved: ${filename}`)
-        } catch (error) {
-            console.error(`Failed to capture screenshot for ${url}:`, error)
-        }
+    const browser = await puppeteer.launch({ headless: true })
+    const startTime = performance.now()
+
+    for (let i = 0; i < urls.length; i++) {
+        await takeScreenshot(urls[i], browser, outputDir, viewport)
     }
 
-    const endTime = Date.now()
-    console.log(`Total screenshots taken: ${screenshotCount}`)
-    console.log(`Total time: ${((endTime - startTime) / 1000).toFixed(2)} seconds`)
+    const endTime = performance.now()
+    const duration = endTime - startTime
+    console.log(`⏱️ Total time: ${formatDuration(duration)}`)
 
     await browser.close()
+    console.log(`✅ Screenshot process completed!`)
 }
 
-// Main function to run the script
-async function main() {
-    const args = process.argv.slice(2)
-    const sitemapUrl = args[0]
-    const width = args[1] ? parseInt(args[1]) : 1280
-    const height = args[2] ? parseInt(args[2]) : 800
-    const outputDir = args[3] || './screenshots'
+// Process command-line arguments
+const args = minimist(process.argv.slice(2))
 
-    if (!sitemapUrl) {
-        console.error('Error: Sitemap URL is required.')
-        process.exit(1)
-    }
+const input = args._[0]
+const resolution = args.viewport
+const outputDir = args.output || 'screenshots'
 
-    console.log('Fetching sitemap...')
-    const urls = await fetchSitemap(sitemapUrl)
-    console.log(`Found ${urls.length} URLs in the sitemap.`)
-
-    console.log('Taking screenshots...')
-    await takeScreenshots(urls, { width, height }, outputDir)
-
-    console.log('Screenshots complete.')
+if (!input) {
+    console.error('❌ Please provide a sitemap URL or file path as the first argument.')
+    process.exit(1)
 }
 
-main()
+main(input, resolution, outputDir)
