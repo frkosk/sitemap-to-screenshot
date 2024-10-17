@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const puppeteer = require('puppeteer') // Import puppeteer library
 const axios = require('axios') // Import axios for fetching URLs
 const xml2js = require('xml2js') // Import xml2js for parsing XML data
